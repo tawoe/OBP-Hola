@@ -14,7 +14,7 @@ FROM panga/alpine:3.8-glibc2.27
 
 
 COPY --from=build /opt/java/jdk /opt/java/jdk
-COPY target/obp-hydra-auth2-0.0.29-SNAPSHOT.jar /opt/application/hola.jar
+COPY target/obp-hola-app-0.0.29-SNAPSHOT.jar /opt/application/hola.jar
 
 ENTRYPOINT ["/opt/java/jdk/bin/java", "-jar", "/opt/application/hola.jar"]
 
