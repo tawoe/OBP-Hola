@@ -1,0 +1,30 @@
+server.port=${SERVER_PORT}
+# rename the JSESSIONID cookie name, avoid local deploy other springboot instance that cause instances share the same JSESSIONID
+# if there is no multiple springboot instance run at single machine, not need set this value.
+#server.servlet.session.cookie.name=OAUTH2_FOW_SESSION
+
+logging.level.com.openbankproject=${LOG_LEVEL}
+oauth2.public_url=${OAUTH_2_PUBLIC_URL}
+obp.base_url=${OBP_BASE_URL}
+## obp endpoint path prefix
+endpoint.path.prefix=${OBP_BASE_URL}/open-banking/v3.1
+
+oauth2.redirect_uri=${OAUTH_2_REDIRECT_URI}
+oauth2.client_id=${OAUTH_2_CLIENT_ID}
+oauth2.client_scope=${OAUTH_2_CLIENT_SCOPE}
+## THE_OAUTH_2_CLIENT_SECRET_AND_OAUTH_2_JWK_PRIVATE_KEY_MUST_ONLY_ONE_HAVE_VALUE
+# oauth2.client_secret=omxzrthvuinflzesctipa1qagmqw5ybymfhcoiwe
+oauth2.jwk_private_key=${OAUTH_2_JWK_PRIVATE_KEY}
+# MTLS related, config keystore and truststore
+## keystore and truststore files can be local files or web resources, as example:
+mtls.keyStore.path=${KEYSTORE}
+mtls.keyStore.password=${KEYSTORE_PASSWD}
+mtls.keyStore.alias=${KEYSTORE_ALIAS}
+mtls.trustStore.path=${TRUST_STORE}
+mtls.trustStore.password=${TRUST_STORE_PASSWD}
+
+#display_standards=UKOpenBanking,BerlinGroup
+display_standards=${DISPLAY_STANDARDS}
+### Force the feature of signing/verifying requests on a certain standard
+force_jws=${FORCE_JWS}
+
