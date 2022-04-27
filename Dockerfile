@@ -10,7 +10,7 @@ RUN jlink \
     --no-man-pages \
     --output /opt/java/jdk
 
-FROM panga/alpine:3.8-glibc2.27
+FROM openjdk:11.0.14.1-jre-bullseye
 
 
 COPY --from=build /opt/java/jdk /opt/java/jdk
