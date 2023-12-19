@@ -20,8 +20,9 @@
 <body>
 <nav class="navbar navbar-light bg-light">
     <a class="navbar-brand" th:href="@{${obpBaseUrl}}">
-        <img th:if="${showBankLogo == 'true'}" th:src="@{${obpBaseUrl} + '/media/images/logo.png'}" height="55" class="d-inline-block align-top" alt=""></img>
+        <img th:if="${showBankLogo == 'true'}" th:src="@{${bankLogoUrl}}" height="55" class="d-inline-block align-top" alt=""></img>
         <img th:unless="${showBankLogo == 'true'}" th:src="@{/images/logo.png}" height="55" class="d-inline-block align-top" alt=""></img>
+        <span class="badge badge-primary">AISP</span>
     </a>
 </nav>
 <div class="jumbotron text-center">
@@ -33,6 +34,7 @@
                     <td th:switch="${standard}">
                         <a th:case="'UKOpenBanking'" th:href="@{/index_uk.html}" class="btn btn-primary btn-lg">UK Open Banking</a>
                         <a th:case="'BerlinGroup'" th:href="@{/index_bg.html}" class="btn btn-danger btn-lg">Berlin Group</a>
+                        <a th:case="'OBP-API'" th:href="@{/index_obp.html}" class="btn btn-info btn-lg">Open Bank Project</a>
                         <a th:case="*" th:href="@{/index.html}" class="btn btn-danger btn-lg"><th:block th:text="${standard}"></th:block></a>
                     </td>
                 </tr>

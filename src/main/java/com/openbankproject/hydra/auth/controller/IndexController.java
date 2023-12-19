@@ -8,6 +8,7 @@ import com.openbankproject.hydra.auth.HydraConfig;
 import com.openbankproject.hydra.auth.VO.*;
 import com.openbankproject.hydra.auth.util.PKCEUtil;
 import com.openbankproject.model.PostConsentJson;
+import com.openbankproject.model.PostConsentRequestJson;
 import org.apache.commons.lang3.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
@@ -29,11 +31,15 @@ import javax.annotation.Resource;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpSession;
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -68,8 +74,14 @@ public class IndexController implements ServletContextAware {
     @Value("${obp.base_url}/berlin-group/v1.3/consents/CONSENT_ID")
     private String getConsentInformationBerlinGroup;
 
+    @Value("${obp.base_url}/obp/v5.1.0/consumer/consent-requests")
+    private String createConsentRequest;
+    
     @Value("${obp.base_url}/obp/v4.0.0/banks/BANK_ID/consents/CONSENT_ID")
     private String updateConsentStatusUrl;
+    
+    @Value("${obp.base_url}/obp/v5.1.0/consumer/consent-requests/CONSENT_REQUEST_ID/consents")
+    private String getConsentByConsentRequestId;
 
     @Value("${display_standards}")
     private String displayStandards;
@@ -79,6 +91,8 @@ public class IndexController implements ServletContextAware {
     private String buttonHoverBackgroundColor;
     @Value("${logo.bank.enabled:false}")
     private String showBankLogo;
+    @Value("${logo.bank.url:#}")
+    private String bankLogoUrl;
 
     @Value("${show_unhandled_errors:false}")
     private boolean showUnhandledErrors;
@@ -101,20 +115,45 @@ public class IndexController implements ServletContextAware {
 
 
     @GetMapping({ "/", "/index", "index.html"})
-    public String index(Model model) {
+    public String index(@RequestHeader(required = false, name = "Referer") String referer, Model model) {
+        if (!returnErrorIfAny(referer).isEmpty()) {
+            model.addAttribute("errorMsg",  returnErrorIfAny(referer));
+            return "error";
+        }
         String[] apiStandards = displayStandards.split(",");
         String[] displayStandards = apiStandards;
         if(apiStandards.length == 1 && apiStandards[0].trim().isEmpty()) {
-            displayStandards = new String[] {"display_standards=UKOpenBanking,BerlinGroup"};
+            displayStandards = new String[] {"display_standards=UKOpenBanking,BerlinGroup,OBP-API"};
         }
         model.addAttribute("displayStandards", displayStandards);
         model.addAttribute("buttonBackgroundColor", buttonBackgroundColor);
         model.addAttribute("buttonHoverBackgroundColor", buttonHoverBackgroundColor);
         model.addAttribute("showBankLogo", showBankLogo);
         model.addAttribute("obpBaseUrl", obpBaseUrl);
+        model.addAttribute("bankLogoUrl", bankLogoUrl);
         return "index";
     }
-    
+
+    private String returnErrorIfAny(@RequestHeader(required = false) String Referer) {
+        if(Referer != null) {
+            try {
+                URL url = new URL(Referer);
+                if(url.getQuery() != null && url.getQuery().contains("error=")) {
+                    String query = url.getQuery();
+                    String decodedQuery = Arrays.stream(query.split("&"))
+                            .filter(param -> param.split("=")[0].startsWith("error"))
+                            .map(param -> param.split("=")[0] + "=" + URLDecoder.decode(param.split("=")[1]))
+                            .collect(Collectors.joining("<br>"));
+                    String error = "<br>" + decodedQuery;
+                    return error;
+                }
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            }
+        }
+        return "";
+    }
+
     @GetMapping({ "/index_uk", "index_uk.html"})
     public String index_uk(Model model) throws ParseException, JOSEException {
         {// initiate consent names
@@ -132,6 +171,7 @@ public class IndexController implements ServletContextAware {
             model.addAttribute("buttonHoverBackgroundColor", buttonHoverBackgroundColor);
             model.addAttribute("showBankLogo", showBankLogo);
             model.addAttribute("obpBaseUrl", obpBaseUrl);
+            model.addAttribute("bankLogoUrl", bankLogoUrl);
         }
         return "index_uk";
     }
@@ -153,8 +193,30 @@ public class IndexController implements ServletContextAware {
             model.addAttribute("buttonHoverBackgroundColor", buttonHoverBackgroundColor);
             model.addAttribute("showBankLogo", showBankLogo);
             model.addAttribute("obpBaseUrl", obpBaseUrl);
+            model.addAttribute("bankLogoUrl", bankLogoUrl);
         }
         return "index_bg";
+    }
+    @GetMapping({"/index_obp", "index_obp.html"})
+    public String index_obp(Model model, HttpSession session) throws ParseException, JOSEException {
+        {// initiate consent names
+            // exclude "openid" and "offline", they are used by hydra
+            String[] consents = allScopes.stream()
+                    .filter(it -> !"openid".equals(it) && !"offline".equals(it))
+                    .filter(it -> it.contains("Obp"))
+                    .toArray(String[]::new);
+            model.addAttribute("consents", consents);
+        }
+        { // initiate all bank names and bank ids
+            Banks banks = restTemplate.getForObject(getBanksUrl, Banks.class);
+            model.addAttribute("banks", banks.getBanks());
+            model.addAttribute("buttonBackgroundColor", buttonBackgroundColor);
+            model.addAttribute("buttonHoverBackgroundColor", buttonHoverBackgroundColor);
+            model.addAttribute("showBankLogo", showBankLogo);
+            model.addAttribute("obpBaseUrl", obpBaseUrl);
+            model.addAttribute("bankLogoUrl", bankLogoUrl);
+        }
+        return "index_obp";
     }
     @GetMapping({"/consents", "consents.html"})
     public String consents(Model model, HttpSession session) throws ParseException, JOSEException {
@@ -165,6 +227,7 @@ public class IndexController implements ServletContextAware {
             model.addAttribute("buttonHoverBackgroundColor", buttonHoverBackgroundColor);
             model.addAttribute("showBankLogo", showBankLogo);
             model.addAttribute("obpBaseUrl", obpBaseUrl);
+            model.addAttribute("bankLogoUrl", bankLogoUrl);
         }
         return "consents";
     }
@@ -329,12 +392,19 @@ public class IndexController implements ServletContextAware {
         }
 
         { // fetch user information
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(SessionData.getAccessToken(session));
-            HttpEntity<String> entity = new HttpEntity<>(headers);
-            ResponseEntity<UserInfo> userInfoResponse = restTemplate.exchange(currentUserUrl, HttpMethod.GET, entity, UserInfo.class);
-            SessionData.setUserInfo(session, userInfoResponse.getBody());
-            logger.debug("login success user:" + userInfoResponse.getBody().getUsername());
+            try {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setBearerAuth(SessionData.getAccessToken(session));
+                HttpEntity<String> entity = new HttpEntity<>(headers);
+                ResponseEntity<UserInfo> userInfoResponse = restTemplate.exchange(currentUserUrl, HttpMethod.GET, entity, UserInfo.class);
+                SessionData.setUserInfo(session, userInfoResponse.getBody());
+                logger.debug("login success user:" + userInfoResponse.getBody().getUsername());
+            } catch (HttpClientErrorException e) {
+                String error = "Sorry! Cannot create the consent.";
+                logger.error(error, e);
+                model.addAttribute("errorMsg", e.getMessage());
+                return "error";
+            }
         }
         String apiStandard = SessionData.getApiStandard(session);
         if(apiStandard.equalsIgnoreCase("BerlinGroup")){ // fetch Consent information
@@ -364,16 +434,21 @@ public class IndexController implements ServletContextAware {
         model.addAttribute("user", user);
         String consentId = SessionData.getConsentId(session);
         model.addAttribute("consentId", consentId);
+        String consentRequestId = SessionData.getConsentRequestId(session);
+        model.addAttribute("consentRequestId", consentRequestId);
         String consentStatus = (String)session.getAttribute("consentStatus");
         model.addAttribute("consentStatus", consentStatus);
         String frequencyPerDay = (String)session.getAttribute("frequencyPerDay");
         model.addAttribute("frequencyPerDay", frequencyPerDay);
         String validUntil = (String)session.getAttribute("validUntil");
         model.addAttribute("validUntil", validUntil);
+        String validFrom = (String)session.getAttribute("validFrom");
+        model.addAttribute("validFrom", validFrom);
         String recurringIndicator = (String)session.getAttribute("recurringIndicator");
         model.addAttribute("recurringIndicator", recurringIndicator);
         model.addAttribute("showBankLogo", showBankLogo);
         model.addAttribute("obpBaseUrl", obpBaseUrl);
+        model.addAttribute("bankLogoUrl", bankLogoUrl);
         return "main";
     }
 
@@ -454,6 +529,100 @@ public class IndexController implements ServletContextAware {
             queryParam.put("expiration_time", expirationDateTime);
             queryParam.put("api_standard", "BerlinGroup");
             SessionData.setApiStandard(session, "BerlinGroup");
+            // TODO the acr_values is just temp example value, can be space split values, need check and supply real values.
+            //queryParam.put("acr_values", "urn:openbankproject:psd2:sca");
+
+            // add request object query parameter
+            if(this.hydraConfig.isPublicClient()) {
+                final String requestObject = this.hydraConfig.buildRequestObject(queryParam);
+                queryParam.put("request", requestObject);
+            }
+
+            // add code_challenge
+            final String codeVerifier = PKCEUtil.generateCodeVerifier();
+            SessionData.setCodeVerifier(session, codeVerifier);
+            final String codeChallenge = PKCEUtil.generateCodeChallenge(codeVerifier);
+            queryParam.put("code_challenge_method", "S256");
+            queryParam.put("code_challenge", codeChallenge);
+
+            String queryParamStr = queryParam.entrySet().stream().map(it -> it.getKey() + "=" + it.getValue()).collect(Collectors.joining("&"));
+            String authorizationEndpoint = openIDConfiguration.getAuthorizationEndpoint();
+            String redirectUrl = "redirect:" + authorizationEndpoint + "?" + queryParamStr;
+
+            // if current user is authenticated, remove user info from session, to do re-authentication
+            SessionData.remoteUserInfo(session);
+
+            return redirectUrl;
+        } catch (Exception unhandledException) {
+            logger.error("Error: ", unhandledException);
+            if(showUnhandledErrors) model.addAttribute("errorMsg", unhandledException);
+            else model.addAttribute("errorMsg", "Internal Server Error");
+            return "error";
+        }
+    }
+    @PostMapping(value="/request_consents_obp", params = {"bank", "time_to_live_in_seconds", "valid_from"})
+    public String requestConsentsOpenBankProject(@RequestParam("bank") String bankId,
+                                                 @RequestParam("time_to_live_in_seconds") String timeToLiveInSeconds,
+                                                 @RequestParam("valid_from") String validFrom,
+                                                 HttpSession session, Model model
+    ) throws UnsupportedEncodingException, ParseException, JOSEException, RestClientException {
+        try {
+            // Create OBP Consent
+            String clientCredentialsToken = getClientCredentialsToken();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(clientCredentialsToken);
+            String validFromTime = localToGMT(validFrom);
+            
+            PostConsentRequestJson body = new PostConsentRequestJson(
+                    true,
+                    bankId,
+                    Integer.parseInt(timeToLiveInSeconds),
+                    validFromTime
+            );
+            String consentRequestId = "";
+            try {
+                HttpEntity<PostConsentRequestJson> request = new HttpEntity<>(body, headers);
+                Map response = restTemplate.postForObject(createConsentRequest, request, Map.class);
+                consentRequestId = ((Map<String, String>) response).get("consent_request_id");
+                session.setAttribute("consent_request_id", consentRequestId);
+                session.setAttribute("consent_id", "None");
+            } catch (HttpClientErrorException e) {
+                String error = "Sorry! Cannot create the consent.";
+                logger.error(error, e);
+                model.addAttribute("errorMsg", e.getMessage());
+                return "error";
+            }
+
+
+            //{"client_id", "bank_id", "consent_id", "response_type=code", "scope", "redirect_uri", "state"})
+            Map<String, String> queryParam = new LinkedHashMap<>();
+            queryParam.put("client_id", clientId);
+            queryParam.put("response_type", "code+id_token");
+            // include OBP scopes, add OAuth2 and OIDC related scope: "openid" and "offline"
+            String scope = Stream.of(new String[]{"openid", "offline"})
+                    .distinct()
+                    .map(this::encodeQueryParam)
+                    .collect(Collectors.joining("+"));
+
+            queryParam.put("scope", scope);
+            String encodeRedirectUri = URLEncoder.encode(redirectUri, "UTF-8");
+            queryParam.put("redirect_uri", encodeRedirectUri);
+            final String state = UUID.randomUUID().toString();
+            final String nonce = UUID.randomUUID().toString();
+            queryParam.put("state", state);
+            queryParam.put("nonce", nonce);
+            SessionData.setState(session, state);
+            SessionData.setNonce(session, nonce);
+
+            // the parameter consent_id and bank_id are mandatory, these two parameter is not standard parameter of OAuth2 and OIDC
+            queryParam.put("consent_request_id", consentRequestId);
+            queryParam.put("consent_id", "None");
+            queryParam.put("bank_id", bankId);
+            queryParam.put("time_to_live_in_seconds", timeToLiveInSeconds);
+            queryParam.put("valid_from", validFromTime);
+            queryParam.put("api_standard", "OBP");
+            SessionData.setApiStandard(session, "OBP");
+            SessionData.setBankId(session, bankId);
             // TODO the acr_values is just temp example value, can be space split values, need check and supply real values.
             //queryParam.put("acr_values", "urn:openbankproject:psd2:sca");
 
@@ -583,6 +752,21 @@ public class IndexController implements ServletContextAware {
      */
     private String convertTimeFormat(String time) {
         return TIME_PATTERN.matcher(time).replaceFirst("$1T$2Z");
+    }
+
+    public static String localToGMT(String dateString) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+        sdf.setTimeZone(TimeZone.getDefault());
+        Date date = null;
+        try {
+            date = sdf.parse(dateString);
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
+        SimpleDateFormat sdfGmt = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        sdfGmt.setTimeZone(TimeZone.getTimeZone("UTC"));
+        String gmtString = sdfGmt.format(date);
+        return gmtString;
     }
 
     private String encodeQueryParam(String value) {
